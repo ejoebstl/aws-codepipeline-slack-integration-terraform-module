@@ -119,6 +119,7 @@ resource "aws_cloudwatch_event_rule" "pipeline_state_update" {
   ]
 }
 PATTERN
+}
 
 # Allow Cloudwatch to invoke Lambda function
 resource "aws_lambda_permission" "allow_cloudwatch" {

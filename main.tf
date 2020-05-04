@@ -73,6 +73,7 @@ formatlist("arn:aws:codepipeline:*:*:%s", var.PIPELINE_NAMES),
   ]
 }
 EOF
+}
 
 resource "aws_lambda_function" "lambda" {
   filename         = "${data.archive_file.lambda_zip.output_path}"

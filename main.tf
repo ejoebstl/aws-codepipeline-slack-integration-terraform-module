@@ -74,41 +74,39 @@ formatlist("arn:aws:codepipeline:*:*:%s", var.PIPELINE_NAMES),
 }
 EOF
 
+resource "aws_lambda_function" "lambda" {
+  filename         = "${data.archive_file.lambda_zip.output_path}"
+  source_code_hash = "${data.archive_file.lambda_zip.output_base64sha256}"
+  description      = "Posts a message to Slack channel '${var.SLACK_CHANNEL}' every time there is an update to codepipeline execution."
+  function_name    = "${var.APP_NAME}-slack-integration-lambda"
+  role             = "${aws_iam_role.lambda_role.arn}"
+  handler          = "handler.handle"
+  runtime          = "nodejs12.x"
+  timeout          = "${var.LAMBDA_TIMEOUT}"
+  memory_size      = "${var.LAMBDA_MEMORY_SIZE}"
+
+  environment {
+    variables = {
+      "SLACK_WEBHOOK_URL" = "${var.SLACK_WEBHOOK_URL}"
+      "SLACK_CHANNEL"     = "${var.SLACK_CHANNEL}"
+      "RELEVANT_STAGES"   = "${var.RELEVANT_STAGES}"
     }
+  }
+}
 
-    resource "aws_lambda_function" "lambda" {
-      filename         = data.archive_file.lambda_zip.output_path
-      source_code_hash = data.archive_file.lambda_zip.output_base64sha256
-      description      = "Posts a message to Slack channel '${var.SLACK_CHANNEL}' every time there is an update to codepipeline execution."
-      function_name    = "${var.APP_NAME}-slack-integration-lambda"
-      role             = aws_iam_role.lambda_role.arn
-      handler          = "handler.handle"
-      runtime          = "nodejs10.x"
-      timeout          = var.LAMBDA_TIMEOUT
-      memory_size      = var.LAMBDA_MEMORY_SIZE
+# Alias pointing to latest for Lambda function
+resource "aws_lambda_alias" "lambda_alias" {
+  name             = "latest"
+  function_name    = aws_lambda_function.lambda.arn
+  function_version = "$LATEST"
+}
 
-      environment {
-        variables = {
-          "SLACK_WEBHOOK_URL" = var.SLACK_WEBHOOK_URL
-          "SLACK_CHANNEL"     = var.SLACK_CHANNEL
-          "RELEVANT_STAGES"   = var.RELEVANT_STAGES
-        }
-      }
-    }
+# Cloudwatch event rule
+resource "aws_cloudwatch_event_rule" "pipeline_state_update" {
+  name        = "${var.APP_NAME}-slack-integration-pipeline-updated"
+  description = "Capture state changes in pipelines '${join(", ", var.PIPELINE_NAMES)}'"
 
-    # Alias pointing to latest for Lambda function
-    resource "aws_lambda_alias" "lambda_alias" {
-      name             = "latest"
-      function_name    = aws_lambda_function.lambda.arn
-      function_version = "$LATEST"
-    }
-
-    # Cloudwatch event rule
-    resource "aws_cloudwatch_event_rule" "pipeline_state_update" {
-      name        = "${var.APP_NAME}-slack-integration-pipeline-updated"
-      description = "Capture state changes in pipelines '${join(", ", var.PIPELINE_NAMES)}'"
-
-      event_pattern = <<PATTERN
+  event_pattern = <<PATTERN
 {
   "detail": {
     "pipeline": ${jsonencode(var.PIPELINE_NAMES)}
@@ -122,21 +120,19 @@ EOF
 }
 PATTERN
 
-    }
+# Allow Cloudwatch to invoke Lambda function
+resource "aws_lambda_permission" "allow_cloudwatch" {
+  statement_id = "AllowExecutionFromCloudWatch"
+  action = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.lambda.function_name
+  principal = "events.amazonaws.com"
+  source_arn = aws_cloudwatch_event_rule.pipeline_state_update.arn
+  qualifier = aws_lambda_alias.lambda_alias.name
+}
 
-    # Allow Cloudwatch to invoke Lambda function
-    resource "aws_lambda_permission" "allow_cloudwatch" {
-      statement_id = "AllowExecutionFromCloudWatch"
-      action = "lambda:InvokeFunction"
-      function_name = aws_lambda_function.lambda.function_name
-      principal = "events.amazonaws.com"
-      source_arn = aws_cloudwatch_event_rule.pipeline_state_update.arn
-      qualifier = aws_lambda_alias.lambda_alias.name
-    }
-
-    # Map event rule to trigger lambda function
-    resource "aws_cloudwatch_event_target" "lambda_trigger" {
-      rule = aws_cloudwatch_event_rule.pipeline_state_update.name
-      arn = aws_lambda_alias.lambda_alias.arn
-    }
+# Map event rule to trigger lambda function
+resource "aws_cloudwatch_event_target" "lambda_trigger" {
+  rule = aws_cloudwatch_event_rule.pipeline_state_update.name
+  arn = aws_lambda_alias.lambda_alias.arn
+}
 

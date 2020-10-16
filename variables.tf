@@ -28,3 +28,7 @@ variable "LAMBDA_MEMORY_SIZE" {
   default = "128"
 }
 
+variable "FORCE_RUN" {
+  default = true
+  type = bool
+}

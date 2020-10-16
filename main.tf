@@ -1,6 +1,6 @@
 resource "null_resource" "pull_and_install_github_repo" {
   triggers = {
-    force_run = uuid()
+    force_run = var.FORCE_RUN ? uuid() : 0
   }
   provisioner "local-exec" {
     command = "cd ${path.module}/aws-codepipeline-slack-integration && npm install -production"
